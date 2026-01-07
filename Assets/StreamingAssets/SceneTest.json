@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "coordinate": "phaser-2d",
+    "origin": "top-left",
+    "unit": "pixel",
+    "tileSize": 32
+  },
+
+  "sceneId": "scene_1",
+
+  "entities": [
+    {
+      "id": "e_player",
+      "assetId": "player",
+
+      "x": 128,
+      "y": 256,
+
+      "variables": [
+        { "id": "hp", "type": "int", "value": 100 },
+        { "id": "mp", "type": "int", "value": 50 }
+      ],
+
+      "events": [
+        {
+          "trigger": "OnStart",
+          "action": "SetVariable",
+          "params": { "name": "hp", "value": 80 }
+        }
+      ]
+    }
+  ]
+}
