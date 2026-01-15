@@ -1,0 +1,404 @@
+{
+  "formatVersion": 2,
+  "activeSceneId": "default",
+  "scenes": [
+    {
+      "sceneId": "default",
+      "name": "Scene 1",
+      "entities": [
+        {
+          "id": "34ac350d-a114-4dde-b264-e8043646793d",
+          "name": "Main Camera",
+          "texture": "Main Camera",
+          "variables": [],
+          "events": [],
+          "components": [],
+          "modules": []
+        },
+        {
+          "id": "d5cd93c5-d472-4327-8b80-fdb94b7f7cb5",
+          "type": "Character",
+          "name": "tree",
+          "texture": "tree",
+          "x": 392.5469285097597,
+          "y": 229.98550905490075,
+          "variables": [],
+          "events": [
+            {
+              "id": "ev_0_0",
+              "trigger": "OnUpdate",
+              "triggerParams": {},
+              "conditionLogic": "AND",
+              "conditions": [],
+              "action": "Rotate",
+              "params": {}
+            }
+          ],
+          "components": [
+            {
+              "id": "logic_0",
+              "type": "Logic",
+              "event": "OnUpdate",
+              "eventParams": {},
+              "conditions": [],
+              "conditionLogic": "AND",
+              "actions": [
+                {
+                  "type": "Rotate"
+                }
+              ]
+            }
+          ],
+          "modules": [
+            {
+              "id": "5307d232-fa54-4f77-8e1c-a409327ca5d8",
+              "name": "Main",
+              "entryNodeId": "bc7a44ca-b473-419e-8f2d-693b958cc734",
+              "variables": [],
+              "nodes": [
+                {
+                  "id": "bc7a44ca-b473-419e-8f2d-693b958cc734",
+                  "kind": "Entry",
+                  "x": 120,
+                  "y": 120
+                },
+                {
+                  "id": "108e73f9-e654-4ef7-b07c-12b1b96b2987",
+                  "kind": "Stop",
+                  "x": 360,
+                  "y": 120,
+                  "result": "Success"
+                }
+              ],
+              "edges": [
+                {
+                  "id": "3c14c79d-567c-4584-8f1a-8350d32416a4",
+                  "type": "flow",
+                  "fromNodeId": "bc7a44ca-b473-419e-8f2d-693b958cc734",
+                  "fromPort": "out",
+                  "toNodeId": "108e73f9-e654-4ef7-b07c-12b1b96b2987",
+                  "toPort": "in"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "e8aa3eba-165b-4488-9fd5-d9721e954cd5",
+          "type": "Character",
+          "name": "tree Copy",
+          "texture": "tree",
+          "x": 497.78105253359166,
+          "y": 292.0067981541348,
+          "variables": [],
+          "events": [
+            {
+              "id": "ev_0_0",
+              "trigger": "OnUpdate",
+              "triggerParams": {},
+              "conditionLogic": "AND",
+              "conditions": [],
+              "action": "Rotate",
+              "params": {}
+            }
+          ],
+          "components": [
+            {
+              "id": "logic_0",
+              "type": "Logic",
+              "event": "OnUpdate",
+              "eventParams": {},
+              "conditions": [],
+              "conditionLogic": "AND",
+              "actions": [
+                {
+                  "type": "Rotate"
+                }
+              ]
+            }
+          ],
+          "modules": [
+            {
+              "id": "5307d232-fa54-4f77-8e1c-a409327ca5d8",
+              "name": "Main",
+              "entryNodeId": "bc7a44ca-b473-419e-8f2d-693b958cc734",
+              "variables": [],
+              "nodes": [
+                {
+                  "id": "bc7a44ca-b473-419e-8f2d-693b958cc734",
+                  "kind": "Entry",
+                  "x": 120,
+                  "y": 120
+                },
+                {
+                  "id": "108e73f9-e654-4ef7-b07c-12b1b96b2987",
+                  "kind": "Stop",
+                  "x": 360,
+                  "y": 120,
+                  "result": "Success"
+                }
+              ],
+              "edges": [
+                {
+                  "id": "3c14c79d-567c-4584-8f1a-8350d32416a4",
+                  "type": "flow",
+                  "fromNodeId": "bc7a44ca-b473-419e-8f2d-693b958cc734",
+                  "fromPort": "out",
+                  "toNodeId": "108e73f9-e654-4ef7-b07c-12b1b96b2987",
+                  "toPort": "in"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "2c312322-b86f-48f8-a946-c5ac5635dc6f",
+          "type": "Character",
+          "name": "tree Copy",
+          "texture": "tree",
+          "x": 633.1572886802952,
+          "y": 229.88242799257242,
+          "variables": [],
+          "events": [
+            {
+              "id": "ev_0_0",
+              "trigger": "OnUpdate",
+              "triggerParams": {},
+              "conditionLogic": "AND",
+              "conditions": [],
+              "action": "Rotate",
+              "params": {}
+            }
+          ],
+          "components": [
+            {
+              "id": "logic_0",
+              "type": "Logic",
+              "event": "OnUpdate",
+              "eventParams": {},
+              "conditions": [],
+              "conditionLogic": "AND",
+              "actions": [
+                {
+                  "type": "Rotate"
+                }
+              ]
+            }
+          ],
+          "modules": [
+            {
+              "id": "5307d232-fa54-4f77-8e1c-a409327ca5d8",
+              "name": "Main",
+              "entryNodeId": "bc7a44ca-b473-419e-8f2d-693b958cc734",
+              "variables": [],
+              "nodes": [
+                {
+                  "id": "bc7a44ca-b473-419e-8f2d-693b958cc734",
+                  "kind": "Entry",
+                  "x": 120,
+                  "y": 120
+                },
+                {
+                  "id": "108e73f9-e654-4ef7-b07c-12b1b96b2987",
+                  "kind": "Stop",
+                  "x": 360,
+                  "y": 120,
+                  "result": "Success"
+                }
+              ],
+              "edges": [
+                {
+                  "id": "3c14c79d-567c-4584-8f1a-8350d32416a4",
+                  "type": "flow",
+                  "fromNodeId": "bc7a44ca-b473-419e-8f2d-693b958cc734",
+                  "fromPort": "out",
+                  "toNodeId": "108e73f9-e654-4ef7-b07c-12b1b96b2987",
+                  "toPort": "in"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "tiles": [
+        {
+          "x": 11,
+          "y": 5,
+          "idx": 0
+        },
+        {
+          "x": 12,
+          "y": 5,
+          "idx": 0
+        },
+        {
+          "x": 13,
+          "y": 5,
+          "idx": 0
+        },
+        {
+          "x": 15,
+          "y": 5,
+          "idx": 0
+        },
+        {
+          "x": 16,
+          "y": 5,
+          "idx": 0
+        },
+        {
+          "x": 17,
+          "y": 5,
+          "idx": 0
+        },
+        {
+          "x": 18,
+          "y": 5,
+          "idx": 0
+        },
+        {
+          "x": 19,
+          "y": 5,
+          "idx": 0
+        },
+        {
+          "x": 20,
+          "y": 5,
+          "idx": 0
+        },
+        {
+          "x": 21,
+          "y": 5,
+          "idx": 0
+        },
+        {
+          "x": 13,
+          "y": 7,
+          "idx": 1
+        },
+        {
+          "x": 14,
+          "y": 7,
+          "idx": 1
+        },
+        {
+          "x": 15,
+          "y": 7,
+          "idx": 1
+        },
+        {
+          "x": 17,
+          "y": 7,
+          "idx": 1
+        },
+        {
+          "x": 18,
+          "y": 7,
+          "idx": 1
+        },
+        {
+          "x": 20,
+          "y": 8,
+          "idx": 1
+        },
+        {
+          "x": 22,
+          "y": 8,
+          "idx": 1
+        },
+        {
+          "x": 23,
+          "y": 8,
+          "idx": 1
+        },
+        {
+          "x": 24,
+          "y": 8,
+          "idx": 1
+        },
+        {
+          "x": 8,
+          "y": 11,
+          "idx": 2
+        },
+        {
+          "x": 9,
+          "y": 11,
+          "idx": 2
+        },
+        {
+          "x": 10,
+          "y": 11,
+          "idx": 2
+        },
+        {
+          "x": 12,
+          "y": 11,
+          "idx": 2
+        },
+        {
+          "x": 14,
+          "y": 11,
+          "idx": 2
+        },
+        {
+          "x": 16,
+          "y": 11,
+          "idx": 2
+        },
+        {
+          "x": 17,
+          "y": 11,
+          "idx": 2
+        },
+        {
+          "x": 19,
+          "y": 11,
+          "idx": 2
+        },
+        {
+          "x": 20,
+          "y": 10,
+          "idx": 2
+        },
+        {
+          "x": 21,
+          "y": 10,
+          "idx": 2
+        }
+      ],
+      "assets": []
+    }
+  ],
+  "assets": [
+    {
+      "id": "1",
+      "name": "test1",
+      "tag": "Tile",
+      "url": "https://uniforge.kr/TestAsset.webp",
+      "idx": 0
+    },
+    {
+      "id": "2",
+      "name": "test2",
+      "tag": "Tile",
+      "url": "https://uniforge.kr/TestAsset2.webp",
+      "idx": 1
+    },
+    {
+      "id": "3",
+      "name": "test3",
+      "tag": "Tile",
+      "url": "https://uniforge.kr/TestAsset3.webp",
+      "idx": 2
+    },
+    {
+      "id": "4",
+      "name": "tree",
+      "tag": "Character",
+      "url": "https://uniforge.kr/GreenTree.webp",
+      "idx": -1
+    }
+  ],
+  "modules": []
+}
