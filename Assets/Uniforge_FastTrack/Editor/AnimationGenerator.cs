@@ -6,6 +6,7 @@ using System.Linq;
 using UnityEditor.Animations;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System;
 
 namespace Uniforge.FastTrack.Editor
 {
@@ -16,6 +17,33 @@ namespace Uniforge.FastTrack.Editor
     public static class AnimationGenerator
     {
         private static string GeneratedAnimPath = "Assets/Uniforge_FastTrack/Generated/Animations";
+
+        /// <summary>
+        /// Finds an asset by reference (can be name, id, or url).
+        /// </summary>
+        public static AssetDetailJSON FindAssetByReference(List<AssetDetailJSON> assets, string reference)
+        {
+            if (assets == null || string.IsNullOrEmpty(reference)) return null;
+
+            // Exact match on name first (most common)
+            var asset = assets.FirstOrDefault(a => a.name == reference);
+            if (asset != null) return asset;
+
+            // Then try id
+            asset = assets.FirstOrDefault(a => a.id == reference);
+            if (asset != null) return asset;
+
+            // Then try url
+            asset = assets.FirstOrDefault(a => a.url == reference);
+            if (asset != null) return asset;
+
+            // Case-insensitive name match
+            asset = assets.FirstOrDefault(a =>
+                !string.IsNullOrEmpty(a.name) && a.name.Equals(reference, StringComparison.OrdinalIgnoreCase));
+            if (asset != null) return asset;
+
+            return null;
+        }
 
         /// <summary>
         /// Generate all animations for an entity based on its texture asset.
@@ -31,12 +59,13 @@ namespace Uniforge.FastTrack.Editor
                 return null;
             }
 
-            var asset = assets?.FirstOrDefault(a => a.name == entity.texture || a.id == entity.texture);
+            var asset = FindAssetByReference(assets, entity.texture);
             if (asset == null)
             {
-                Debug.LogWarning($"[AnimationGenerator] Asset not found for texture '{entity.texture}' in entity '{entity.name}'. Available assets: {string.Join(", ", assets?.Select(a => a.name) ?? new string[0])}");
+                Debug.LogWarning($"[AnimationGenerator] Asset not found for texture '{entity.texture}' in entity '{entity.name}'. Available assets: {string.Join(", ", assets?.Select(a => $"{a.name}({a.id})") ?? new string[0])}");
                 return null;
             }
+            Debug.Log($"[AnimationGenerator] Found asset: name='{asset.name}', id='{asset.id}' for texture='{entity.texture}'");
 
             // Check if entity implementation needs animation
             bool force = HasAnimationUsage(entity);
@@ -110,8 +139,36 @@ namespace Uniforge.FastTrack.Editor
             {
                 foreach (var comp in entity.components)
                 {
+                    // Extract from Logic component actions
                     ExtractAnimationsFromActions(comp.actions, result);
                     ExtractAnimationsFromActions(comp.elseActions, result);
+
+                    // Extract from PlayAnimation component type (auto-play animation)
+                    if (comp.type != null)
+                    {
+                        string typeLC = comp.type.ToLowerInvariant();
+                        if (typeLC == "playanimation" || typeLC == "animation")
+                        {
+                            // PlayAnimation component specifies an animation to play on start
+                            // Use GetAllParams to get both eventParams and AdditionalData
+                            var p = comp.GetAllParams();
+                            var animName = ParameterHelper.GetParamString(p, "animationName");
+                            if (string.IsNullOrEmpty(animName))
+                                animName = ParameterHelper.GetParamString(p, "animation");
+                            if (string.IsNullOrEmpty(animName))
+                                animName = ParameterHelper.GetParamString(p, "name");
+                            if (string.IsNullOrEmpty(animName))
+                                animName = ParameterHelper.GetParamString(p, "state");
+
+                            Debug.Log($"[AnimationGenerator] PlayAnimation component params: [{string.Join(", ", p.Select(kv => $"{kv.Key}={kv.Value}"))}]");
+
+                            if (!string.IsNullOrEmpty(animName))
+                            {
+                                result.Add(animName);
+                                Debug.Log($"[AnimationGenerator] Found PlayAnimation component animation: {animName}");
+                            }
+                        }
+                    }
                 }
             }
 
@@ -130,14 +187,18 @@ namespace Uniforge.FastTrack.Editor
                 if (action.type == "PlayAnimation")
                 {
                     var p = action.GetAllParams();
-                    // Try multiple parameter name variations
+                    // Try multiple parameter name variations (order by likelihood)
                     var animName = ParameterHelper.GetParamString(p, "animationName");
+                    if (string.IsNullOrEmpty(animName))
+                        animName = ParameterHelper.GetParamString(p, "animName");
                     if (string.IsNullOrEmpty(animName))
                         animName = ParameterHelper.GetParamString(p, "animation");
                     if (string.IsNullOrEmpty(animName))
                         animName = ParameterHelper.GetParamString(p, "name");
                     if (string.IsNullOrEmpty(animName))
                         animName = ParameterHelper.GetParamString(p, "anim");
+                    if (string.IsNullOrEmpty(animName))
+                        animName = ParameterHelper.GetParamString(p, "clip");
                     if (string.IsNullOrEmpty(animName))
                         animName = ParameterHelper.GetParamString(p, "state");
 
@@ -201,7 +262,23 @@ namespace Uniforge.FastTrack.Editor
             var meta = GetMetadata(asset.metadata);
             requiredAnimations = requiredAnimations ?? new HashSet<string>();
 
-            Debug.Log($"[AnimationGenerator] GenerateFromAsset: {asset.name}, force={force}, requiredAnimations=[{string.Join(", ", requiredAnimations)}]");
+            // [DEBUG] Log metadata parsing result
+            Debug.Log($"<color=cyan>[AnimationGenerator]</color> GenerateFromAsset: {asset.name}");
+            Debug.Log($"  - Raw metadata is null: {asset.metadata == null}");
+            Debug.Log($"  - Parsed meta is null: {meta == null}");
+            if (meta != null)
+            {
+                Debug.Log($"  - meta.animations is null: {meta.animations == null}");
+                Debug.Log($"  - meta.animations count: {meta.animations?.Count ?? 0}");
+                if (meta.animations != null)
+                {
+                    foreach (var kvp in meta.animations)
+                    {
+                        Debug.Log($"    - Animation '{kvp.Key}': frames={kvp.Value?.frames?.Length ?? 0}, fps={kvp.Value?.fps}, loop={kvp.Value?.loop}");
+                    }
+                }
+            }
+            Debug.Log($"  - requiredAnimations: [{string.Join(", ", requiredAnimations)}]");
 
             // Ensure directory exists
             if (!Directory.Exists(GeneratedAnimPath))
@@ -213,7 +290,7 @@ namespace Uniforge.FastTrack.Editor
             string safeName = SanitizeName(asset.name);
             string controllerPath = $"{GeneratedAnimPath}/{safeName}_Controller.controller";
 
-            // Check if already exists - but may need to update if required animations changed
+            // Check if already exists - but may need to update if required animations or sprites changed
             var existingController = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
             if (existingController != null)
             {
@@ -224,12 +301,40 @@ namespace Uniforge.FastTrack.Editor
 
                 Debug.Log($"[AnimationGenerator] Existing controller states: [{string.Join(", ", existingStates)}]");
 
+                // Check for missing required states
                 foreach (var animName in requiredAnimations)
                 {
                     if (!existingStates.Contains(animName))
                     {
                         needsUpdate = true;
                         Debug.Log($"[AnimationGenerator] Controller missing required state: {animName}");
+                    }
+                }
+
+                // [FIX] Also check if sprite count has changed (indicates re-slicing)
+                var currentSprites = LoadSpritesFromAsset(asset);
+                if (currentSprites != null && currentSprites.Length > 0)
+                {
+                    // Get sprite count from existing default state's clip
+                    var defaultState = existingStates.Contains("default") 
+                        ? stateMachine.states.First(s => s.state.name == "default").state 
+                        : (stateMachine.states.Length > 0 ? stateMachine.states[0].state : null);
+                    
+                    if (defaultState?.motion is AnimationClip existingClip)
+                    {
+                        var bindings = AnimationUtility.GetObjectReferenceCurveBindings(existingClip);
+                        if (bindings.Length > 0)
+                        {
+                            var keyframes = AnimationUtility.GetObjectReferenceCurve(existingClip, bindings[0]);
+                            int existingFrameCount = keyframes?.Length ?? 0;
+                            
+                            // If sprite count differs significantly, regenerate
+                            if (currentSprites.Length != existingFrameCount && currentSprites.Length > 1)
+                            {
+                                needsUpdate = true;
+                                Debug.Log($"[AnimationGenerator] Sprite count changed: {existingFrameCount} -> {currentSprites.Length}, regenerating");
+                            }
+                        }
                     }
                 }
 
@@ -385,13 +490,71 @@ namespace Uniforge.FastTrack.Editor
         /// </summary>
         private static (Sprite[] sprites, AssetMetadataJSON metadata) TryHeuristicSlicing(AssetDetailJSON asset)
         {
-            // Find the texture in project
-            string[] guids = AssetDatabase.FindAssets($"t:Texture2D {asset.name}");
-            if (guids.Length == 0) return (null, null);
+            string texturePath = null;
+            Texture2D texture = null;
 
-            string texturePath = AssetDatabase.GUIDToAssetPath(guids[0]);
-            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
-            if (texture == null) return (null, null);
+            // Try to find the texture in project by name first
+            string[] guids = AssetDatabase.FindAssets($"t:Texture2D {asset.name}");
+            foreach (var guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (path.Contains("Uniforge_FastTrack/Textures"))
+                {
+                    texturePath = path;
+                    texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+                    break;
+                }
+            }
+
+            // Fallback: Try to find by URL hash (files are saved as asset_XXXX.png)
+            if (texture == null && !string.IsNullOrEmpty(asset.url))
+            {
+                int urlHash = Math.Abs(asset.url.GetHashCode());
+                string expectedFileName = $"asset_{urlHash}";
+                
+                guids = AssetDatabase.FindAssets($"t:Texture2D {expectedFileName}");
+                foreach (var guid in guids)
+                {
+                    texturePath = AssetDatabase.GUIDToAssetPath(guid);
+                    texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+                    if (texture != null)
+                    {
+                        Debug.Log($"[AnimationGenerator] Found texture by URL hash for heuristic slicing: {texturePath}");
+                        break;
+                    }
+                }
+            }
+
+            // Last resort: Search all textures in Textures folder
+            if (texture == null)
+            {
+                string texturesPath = "Assets/Uniforge_FastTrack/Textures";
+                if (Directory.Exists(texturesPath))
+                {
+                    var allTextures = AssetDatabase.FindAssets("t:Texture2D", new[] { texturesPath });
+                    foreach (var guid in allTextures)
+                    {
+                        string path = AssetDatabase.GUIDToAssetPath(guid);
+                        if (!string.IsNullOrEmpty(asset.url))
+                        {
+                            int urlHash = Math.Abs(asset.url.GetHashCode());
+                            if (path.Contains(urlHash.ToString()))
+                            {
+                                texturePath = path;
+                                texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+                                Debug.Log($"[AnimationGenerator] Found texture by direct search: {texturePath}");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (texture == null) 
+            {
+                Debug.LogWarning($"[AnimationGenerator] Could not find texture for heuristic slicing: {asset.name} (url={asset.url?.Substring(0, Math.Min(30, asset.url?.Length ?? 0))}...)");
+                return (null, null);
+            }
 
             int width = texture.width;
             int height = texture.height;
@@ -454,10 +617,84 @@ namespace Uniforge.FastTrack.Editor
             return (null, null);
         }
 
+        /// <summary>
+        /// Public method to get sprites for an asset (used by UniforgeImporter to get first frame).
+        /// </summary>
+        public static Sprite[] GetSpritesForAsset(AssetDetailJSON asset)
+        {
+            if (asset == null) return null;
+            
+            // First try to load already sliced sprites
+            var sprites = LoadSpritesFromAsset(asset);
+            if (sprites != null && sprites.Length > 0)
+            {
+                return sprites;
+            }
+            
+            // If no sliced sprites, try heuristic slicing
+            var (heuristicSprites, _) = TryHeuristicSlicing(asset);
+            return heuristicSprites;
+        }
+
         private static Sprite[] LoadSpritesFromAsset(AssetDetailJSON asset)
         {
-            // Try to find already imported texture in project by name
-            string[] guids = AssetDatabase.FindAssets($"t:Texture2D {asset.name}");
+            Debug.Log($"[AnimationGenerator] LoadSpritesFromAsset: name={asset.name}, id={asset.id}, url={(asset.url?.Substring(0, Math.Min(80, asset.url?.Length ?? 0)))}...");
+
+            string texturesPath = "Assets/Uniforge_FastTrack/Textures";
+
+            // Method 1: Try direct path by URL hash (primary method - this is how files are saved)
+            if (!string.IsNullOrEmpty(asset.url))
+            {
+                int urlHash = Math.Abs(asset.url.GetHashCode());
+                string directPath = $"{texturesPath}/asset_{urlHash}.png";
+
+                if (File.Exists(directPath))
+                {
+                    var sprites = AssetDatabase.LoadAllAssetsAtPath(directPath)
+                        .OfType<Sprite>()
+                        .OrderBy(s => s.name)
+                        .ToArray();
+
+                    if (sprites.Length > 0)
+                    {
+                        Debug.Log($"[AnimationGenerator] Found {sprites.Length} sprites by direct URL hash path: {directPath}");
+                        return sprites;
+                    }
+                }
+            }
+
+            // Method 2: Try to find by asset name in Textures folder
+            if (!string.IsNullOrEmpty(asset.name) && Directory.Exists(texturesPath))
+            {
+                // Check for exact filename match
+                string[] possiblePaths = new[]
+                {
+                    $"{texturesPath}/{asset.name}.png",
+                    $"{texturesPath}/{asset.name}",
+                    $"{texturesPath}/{asset.id}.png"
+                };
+
+                foreach (var path in possiblePaths)
+                {
+                    if (File.Exists(path))
+                    {
+                        var sprites = AssetDatabase.LoadAllAssetsAtPath(path)
+                            .OfType<Sprite>()
+                            .OrderBy(s => s.name)
+                            .ToArray();
+
+                        if (sprites.Length > 0)
+                        {
+                            Debug.Log($"[AnimationGenerator] Found {sprites.Length} sprites by name path: {path}");
+                            return sprites;
+                        }
+                    }
+                }
+            }
+
+            // Method 3: AssetDatabase search by name
+            string[] guids = AssetDatabase.FindAssets($"t:Texture2D {asset.name}", new[] { texturesPath });
+            Debug.Log($"[AnimationGenerator] Search by name '{asset.name}': found {guids.Length} results");
             foreach (var guid in guids)
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
@@ -466,58 +703,68 @@ namespace Uniforge.FastTrack.Editor
                     .OrderBy(s => s.name)
                     .ToArray();
 
-                if (sprites.Length > 0) return sprites;
-            }
-
-            // Fallback: Try to find by URL hash (files are saved as asset_XXXX.png)
-            if (!string.IsNullOrEmpty(asset.url))
-            {
-                int urlHash = asset.url.GetHashCode();
-                string expectedFileName = $"asset_{urlHash}";
-                
-                guids = AssetDatabase.FindAssets($"t:Texture2D {expectedFileName}");
-                foreach (var guid in guids)
+                if (sprites.Length > 0)
                 {
-                    string path = AssetDatabase.GUIDToAssetPath(guid);
-                    var sprites = AssetDatabase.LoadAllAssetsAtPath(path)
-                        .OfType<Sprite>()
-                        .OrderBy(s => s.name)
-                        .ToArray();
-
-                    if (sprites.Length > 0)
-                    {
-                        Debug.Log($"[AnimationGenerator] Found sprite by URL hash: {path}");
-                        return sprites;
-                    }
+                    Debug.Log($"[AnimationGenerator] Found {sprites.Length} sprites by AssetDatabase search: {path}");
+                    return sprites;
                 }
             }
 
-            // Last resort: Search in Textures folder directly
-            string texturesPath = "Assets/Uniforge_FastTrack/Textures";
-            if (Directory.Exists(texturesPath))
+            // Method 4: Scan all textures in folder and match by URL hash in filename
+            if (Directory.Exists(texturesPath) && !string.IsNullOrEmpty(asset.url))
             {
+                int urlHash = Math.Abs(asset.url.GetHashCode());
                 var allTextures = AssetDatabase.FindAssets("t:Texture2D", new[] { texturesPath });
+
                 foreach (var guid in allTextures)
                 {
                     string path = AssetDatabase.GUIDToAssetPath(guid);
-                    var sprites = AssetDatabase.LoadAllAssetsAtPath(path)
-                        .OfType<Sprite>()
-                        .OrderBy(s => s.name)
-                        .ToArray();
-
-                    // Match by checking if URL hash is in filename
-                    if (!string.IsNullOrEmpty(asset.url))
+                    if (path.Contains(urlHash.ToString()))
                     {
-                        int urlHash = asset.url.GetHashCode();
-                        if (path.Contains(urlHash.ToString()) && sprites.Length > 0)
+                        var sprites = AssetDatabase.LoadAllAssetsAtPath(path)
+                            .OfType<Sprite>()
+                            .OrderBy(s => s.name)
+                            .ToArray();
+
+                        if (sprites.Length > 0)
                         {
-                            Debug.Log($"[AnimationGenerator] Found sprite by direct search: {path}");
+                            Debug.Log($"[AnimationGenerator] Found {sprites.Length} sprites by URL hash scan: {path}");
                             return sprites;
                         }
                     }
                 }
             }
 
+            // Method 5: Fuzzy name match
+            if (Directory.Exists(texturesPath) && !string.IsNullOrEmpty(asset.name))
+            {
+                var allTextures = AssetDatabase.FindAssets("t:Texture2D", new[] { texturesPath });
+                string searchName = asset.name.ToLower();
+                foreach (var guid in allTextures)
+                {
+                    string path = AssetDatabase.GUIDToAssetPath(guid);
+                    string fileName = Path.GetFileNameWithoutExtension(path).ToLower();
+                    
+                    if (fileName.Contains(searchName) || searchName.Contains(fileName))
+                    {
+                        var sprites = AssetDatabase.LoadAllAssetsAtPath(path)
+                            .OfType<Sprite>()
+                            .OrderBy(s => s.name)
+                            .ToArray();
+                        if (sprites.Length > 1) // Multiple sprites = sprite sheet
+                        {
+                            Debug.Log($"[AnimationGenerator] Found sprite by name match: {path} ({sprites.Length} sprites)");
+                            return sprites;
+                        }
+                    }
+                }
+                
+                // [REMOVED] Dangerous "last resort" fallback that could return wrong asset's sprites.
+                // If we reach here, no matching sprites were found - this is safer than returning wrong ones.
+                Debug.LogWarning($"[AnimationGenerator] Fuzzy match failed for '{asset.name}'. Searched {allTextures.Length} textures in {texturesPath}.");
+            }
+
+            Debug.LogWarning($"[AnimationGenerator] Could not find sprites for asset: {asset.name}");
             return null;
         }
 
@@ -525,9 +772,8 @@ namespace Uniforge.FastTrack.Editor
         {
             if (sprites == null || sprites.Length == 0) return null;
 
-            int start = Mathf.Clamp(def.startFrame, 0, sprites.Length - 1);
-            int end = Mathf.Clamp(def.endFrame, start, sprites.Length - 1);
-            int frameRate = def.frameRate > 0 ? def.frameRate : 12;
+            // Determine frame rate (frontend uses 'fps', legacy uses 'frameRate')
+            int frameRate = def.fps > 0 ? def.fps : (def.frameRate > 0 ? def.frameRate : 12);
 
             var clip = new AnimationClip();
             clip.name = $"{assetName}_{animName}";
@@ -541,13 +787,51 @@ namespace Uniforge.FastTrack.Editor
             var keyframes = new List<ObjectReferenceKeyframe>();
             float frameDuration = 1f / frameRate;
 
-            for (int i = start; i <= end; i++)
+            // Check if using frontend format (frames array) or legacy format (startFrame/endFrame)
+            if (def.frames != null && def.frames.Length > 0)
             {
-                keyframes.Add(new ObjectReferenceKeyframe
+                // Frontend format: use frames array directly
+                Debug.Log($"[AnimationGenerator] Using frames array format for '{animName}': [{string.Join(", ", def.frames)}], fps={frameRate}");
+                
+                for (int i = 0; i < def.frames.Length; i++)
                 {
-                    time = (i - start) * frameDuration,
-                    value = sprites[i]
-                });
+                    int frameIndex = def.frames[i];
+                    if (frameIndex >= 0 && frameIndex < sprites.Length)
+                    {
+                        keyframes.Add(new ObjectReferenceKeyframe
+                        {
+                            time = i * frameDuration,
+                            value = sprites[frameIndex]
+                        });
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[AnimationGenerator] Frame index {frameIndex} out of range for animation '{animName}' (sprites.Length={sprites.Length})");
+                    }
+                }
+            }
+            else
+            {
+                // Legacy format: use startFrame/endFrame
+                int start = Mathf.Clamp(def.startFrame, 0, sprites.Length - 1);
+                int end = Mathf.Clamp(def.endFrame, start, sprites.Length - 1);
+                
+                Debug.Log($"[AnimationGenerator] Using legacy format for '{animName}': startFrame={start}, endFrame={end}, frameRate={frameRate}");
+
+                for (int i = start; i <= end; i++)
+                {
+                    keyframes.Add(new ObjectReferenceKeyframe
+                    {
+                        time = (i - start) * frameDuration,
+                        value = sprites[i]
+                    });
+                }
+            }
+
+            if (keyframes.Count == 0)
+            {
+                Debug.LogWarning($"[AnimationGenerator] No keyframes created for animation '{animName}'");
+                return null;
             }
 
             // Create binding
@@ -558,6 +842,7 @@ namespace Uniforge.FastTrack.Editor
             string clipPath = $"{GeneratedAnimPath}/{clip.name}.anim";
             AssetDatabase.CreateAsset(clip, clipPath);
 
+            Debug.Log($"[AnimationGenerator] Created animation clip '{animName}' with {keyframes.Count} frames at {frameRate} FPS");
             return clip;
         }
 

@@ -182,13 +182,48 @@ namespace Uniforge.FastTrack.Editor
     public class ComponentJSON
     {
         public string id;
-        public string type; // "Transform", "Render", "Logic", "Signal"
+        public string type; // "Transform", "Render", "Logic", "Signal", "playanimation", "particle", etc.
         public string @event; // Trigger event type
         public Dictionary<string, object> eventParams;
         public List<ConditionJSON> conditions;
         public string conditionLogic;
         public List<ActionJSON> actions;
         public List<ActionJSON> elseActions;
+
+        // Capture additional flat properties (for playanimation, particle, etc.)
+        [Newtonsoft.Json.JsonExtensionData]
+        public Dictionary<string, object> AdditionalData { get; set; }
+
+        /// <summary>
+        /// Gets all parameters, merging eventParams and flat fields
+        /// </summary>
+        public Dictionary<string, object> GetAllParams()
+        {
+            var result = new Dictionary<string, object>();
+
+            // First add eventParams if exists
+            if (eventParams != null)
+            {
+                foreach (var kvp in eventParams)
+                {
+                    result[kvp.Key] = kvp.Value;
+                }
+            }
+
+            // Then add flat fields (AdditionalData from JsonExtensionData)
+            if (AdditionalData != null)
+            {
+                foreach (var kvp in AdditionalData)
+                {
+                    if (kvp.Key != "type" && kvp.Key != "id" && !result.ContainsKey(kvp.Key))
+                    {
+                        result[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
+
+            return result;
+        }
     }
 
     [Serializable]
@@ -268,10 +303,15 @@ namespace Uniforge.FastTrack.Editor
     [Serializable]
     public class AnimationDefJSON
     {
+        // Legacy format (startFrame/endFrame)
         public int startFrame;
         public int endFrame;
         public int frameRate;
         public bool loop;
+        
+        // Frontend format (frames array + fps)
+        public int[] frames;  // Array of frame indices [0, 1, 2, 3...]
+        public int fps;       // Frames per second (frontend uses 'fps' instead of 'frameRate')
     }
 
     [Serializable]

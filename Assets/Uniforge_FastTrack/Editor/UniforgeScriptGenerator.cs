@@ -22,10 +22,13 @@ namespace Uniforge.FastTrack.Editor
             // v3: Use components directly, no conversion needed
             var logicComponents = GetLogicComponents(entity);
 
-            if (logicComponents.Count == 0 &&
+            // Get special component types (playanimation, particle, etc.)
+            var specialComponents = GetSpecialComponents(entity);
+
+            if (logicComponents.Count == 0 && specialComponents.Count == 0 &&
                 (entity.variables == null || entity.variables.Count == 0))
             {
-                Debug.Log($"<color=gray>[ScriptGen]</color> Skipping '{entity.name}' - no logic or variables");
+                Debug.Log($"<color=gray>[ScriptGen]</color> Skipping '{entity.name}' - no logic, special components, or variables");
                 return;
             }
 
@@ -59,8 +62,8 @@ namespace Uniforge.FastTrack.Editor
             // Awake
             GenerateAwakeMethod(sb);
 
-            // Generate methods from components
-            GenerateMethodsFromComponents(sb, logicComponents, entity);
+            // Generate methods from components (including special components)
+            GenerateMethodsFromComponents(sb, logicComponents, entity, specialComponents);
 
             // Helper Methods
             GenerateHelperMethods(sb, entity.variables);
@@ -100,6 +103,36 @@ namespace Uniforge.FastTrack.Editor
             }
 
             return new List<ComponentJSON>();
+        }
+
+        /// <summary>
+        /// Get special components (playanimation, particle, render, etc.) from entity
+        /// These are non-Logic components that need special handling
+        /// </summary>
+        private static List<ComponentJSON> GetSpecialComponents(EntityJSON entity)
+        {
+            var result = new List<ComponentJSON>();
+
+            if (entity.components == null) return result;
+
+            // Case-insensitive matching for component types
+            foreach (var comp in entity.components)
+            {
+                if (comp == null || string.IsNullOrEmpty(comp.type)) continue;
+
+                string typeLC = comp.type.ToLowerInvariant();
+
+                // Check for special component types
+                if (typeLC == "playanimation" || typeLC == "animation" ||
+                    typeLC == "particle" || typeLC == "particleemitter" ||
+                    typeLC == "render" || typeLC == "sprite")
+                {
+                    result.Add(comp);
+                    Debug.Log($"<color=cyan>[ScriptGen]</color> Found special component: {comp.type}");
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -193,8 +226,23 @@ namespace Uniforge.FastTrack.Editor
                 {
                     string type = GetCSharpType(v.type);
                     string defaultValue = GetDefaultValue(v.type, v.value);
-                    string name = ParameterHelper.SanitizeName(v.name);
-                    sb.AppendLine($"    public {type} {name} = {defaultValue};");
+                    
+                    // Primary field: Use Sanitized v.name (the original variable name)
+                    string primaryFieldName = ParameterHelper.SanitizeName(v.name);
+                    sb.AppendLine($"    public {type} {primaryFieldName} = {defaultValue};");
+                    
+                    // [FIX] Also generate ID-based alias if v.id exists and differs from name
+                    // This supports legacy data where actions reference variables by ID (var_1)
+                    if (!string.IsNullOrEmpty(v.id))
+                    {
+                        string idFieldName = ParameterHelper.SanitizeName(v.id);
+                        // Only add alias if it's different from primary field name
+                        if (idFieldName != primaryFieldName)
+                        {
+                            // Generate a property that references the main field
+                            sb.AppendLine($"    private {type} {idFieldName} {{ get => {primaryFieldName}; set => {primaryFieldName} = value; }}");
+                        }
+                    }
                 }
             }
             sb.AppendLine();
@@ -268,11 +316,20 @@ namespace Uniforge.FastTrack.Editor
             sb.AppendLine();
         }
 
-        private static void GenerateMethodsFromComponents(StringBuilder sb, List<ComponentJSON> components, EntityJSON entity)
+        private static void GenerateMethodsFromComponents(StringBuilder sb, List<ComponentJSON> components, EntityJSON entity, List<ComponentJSON> specialComponents = null)
         {
             // Group by trigger
             var groups = components.GroupBy(c => c.@event ?? "OnUpdate").ToDictionary(g => g.Key, g => g.ToList());
             var generatedMethods = new HashSet<string>();
+
+            // Ensure Start method exists if we have special components
+            if (specialComponents != null && specialComponents.Count > 0)
+            {
+                if (!groups.ContainsKey("OnStart"))
+                {
+                    groups["OnStart"] = new List<ComponentJSON>();
+                }
+            }
 
             // Process each trigger group
             foreach (var kvp in groups)
@@ -283,7 +340,7 @@ namespace Uniforge.FastTrack.Editor
                 switch (trigger)
                 {
                     case "OnStart":
-                        GenerateStartMethod(sb, comps, entity);
+                        GenerateStartMethod(sb, comps, entity, specialComponents);
                         generatedMethods.Add("Start");
                         break;
 
@@ -344,7 +401,7 @@ namespace Uniforge.FastTrack.Editor
             }
         }
 
-        private static void GenerateStartMethod(StringBuilder sb, List<ComponentJSON> components, EntityJSON entity)
+        private static void GenerateStartMethod(StringBuilder sb, List<ComponentJSON> components, EntityJSON entity, List<ComponentJSON> specialComponents = null)
         {
             // Separate components with Wait from those without
             var normalComps = new List<ComponentJSON>();
@@ -360,6 +417,15 @@ namespace Uniforge.FastTrack.Editor
 
             sb.AppendLine("    void Start()");
             sb.AppendLine("    {");
+
+            // Generate special component initialization code (playanimation, particle, etc.)
+            if (specialComponents != null)
+            {
+                foreach (var comp in specialComponents)
+                {
+                    GenerateSpecialComponentCode(sb, comp, "        ", entity);
+                }
+            }
 
             // Generate normal components inline
             foreach (var comp in normalComps)
@@ -385,6 +451,116 @@ namespace Uniforge.FastTrack.Editor
                 sb.AppendLine("        yield break;");
                 sb.AppendLine("    }");
                 sb.AppendLine();
+            }
+        }
+
+        /// <summary>
+        /// Generate code for special component types (playanimation, particle, etc.)
+        /// </summary>
+        private static void GenerateSpecialComponentCode(StringBuilder sb, ComponentJSON comp, string indent, EntityJSON entity)
+        {
+            if (comp == null || string.IsNullOrEmpty(comp.type)) return;
+
+            string typeLC = comp.type.ToLowerInvariant();
+            // Use GetAllParams to merge eventParams and AdditionalData
+            var p = comp.GetAllParams();
+
+            Debug.Log($"[ScriptGen] GenerateSpecialComponentCode: type={comp.type}, params=[{string.Join(", ", p.Select(kv => $"{kv.Key}={kv.Value}"))}]");
+
+            switch (typeLC)
+            {
+                case "playanimation":
+                case "animation":
+                    {
+                        // PlayAnimation component - auto-play animation on start
+                        string animName = GetEventParamString(p, "animationName", "animation", "name", "state");
+                        bool loop = GetEventParamBool(p, "loop", true);
+
+                        if (!string.IsNullOrEmpty(animName))
+                        {
+                            sb.AppendLine($"{indent}// PlayAnimation component: {animName} (loop={loop})");
+                            sb.AppendLine($"{indent}if (_animator != null)");
+                            sb.AppendLine($"{indent}{{");
+                            sb.AppendLine($"{indent}    _animator.Play(\"{animName}\");");
+                            sb.AppendLine($"{indent}    Debug.Log(\"[PlayAnimation] Auto-playing animation: {animName}\");");
+                            sb.AppendLine($"{indent}}}");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"{indent}// PlayAnimation component: No animation name specified");
+                        }
+                        break;
+                    }
+
+                case "particle":
+                case "particleemitter":
+                    {
+                        // Particle component - start particle emitter on entity
+                        string particleSystemId = GetEventParamString(p, "particleSystemId", "systemId", "preset", "effect");
+                        string emitterId = GetEventParamString(p, "emitterId", "id");
+                        float offsetX = GetEventParamFloat(p, "offsetX", 0) / 100f;
+                        float offsetY = GetEventParamFloat(p, "offsetY", 0) / 100f;
+                        bool attachToEntity = GetEventParamBool(p, "attachToEntity", true);
+                        bool playOnStart = GetEventParamBool(p, "playOnStart", true);
+
+                        if (string.IsNullOrEmpty(emitterId))
+                        {
+                            emitterId = $"emitter_{entity.id}_{comp.id ?? System.Guid.NewGuid().ToString("N").Substring(0, 8)}";
+                        }
+
+                        if (playOnStart && !string.IsNullOrEmpty(particleSystemId))
+                        {
+                            sb.AppendLine($"{indent}// Particle component: {particleSystemId}");
+                            sb.AppendLine($"{indent}{{");
+                            sb.AppendLine($"{indent}    var emitter = ParticleEmitterManager.StartEmitter(");
+                            sb.AppendLine($"{indent}        \"{emitterId}\",");
+                            sb.AppendLine($"{indent}        \"{particleSystemId}\",");
+                            sb.AppendLine($"{indent}        {(attachToEntity ? "_transform" : "null")},");
+                            sb.AppendLine($"{indent}        new Vector3({offsetX}f, {-offsetY}f, 0)");
+                            sb.AppendLine($"{indent}    );");
+                            sb.AppendLine($"{indent}    if (emitter != null)");
+                            sb.AppendLine($"{indent}    {{");
+                            sb.AppendLine($"{indent}        _activeEmitters[\"{emitterId}\"] = emitter;");
+                            sb.AppendLine($"{indent}        Debug.Log(\"[Particle] Started emitter: {emitterId} with system: {particleSystemId}\");");
+                            sb.AppendLine($"{indent}    }}");
+                            sb.AppendLine($"{indent}}}");
+                        }
+                        else if (!string.IsNullOrEmpty(particleSystemId))
+                        {
+                            sb.AppendLine($"{indent}// Particle component configured but playOnStart=false: {particleSystemId}");
+                        }
+                        break;
+                    }
+
+                case "render":
+                case "sprite":
+                    {
+                        // Render/Sprite component - typically handled by importer, but can have special settings
+                        int sortingOrder = (int)GetEventParamFloat(p, "sortingOrder", 0);
+                        string sortingLayer = GetEventParamString(p, "sortingLayer", "layer");
+
+                        if (sortingOrder != 0 || !string.IsNullOrEmpty(sortingLayer))
+                        {
+                            sb.AppendLine($"{indent}// Render component settings");
+                            sb.AppendLine($"{indent}var sr = GetComponent<SpriteRenderer>();");
+                            sb.AppendLine($"{indent}if (sr != null)");
+                            sb.AppendLine($"{indent}{{");
+                            if (sortingOrder != 0)
+                            {
+                                sb.AppendLine($"{indent}    sr.sortingOrder = {sortingOrder};");
+                            }
+                            if (!string.IsNullOrEmpty(sortingLayer))
+                            {
+                                sb.AppendLine($"{indent}    sr.sortingLayerName = \"{sortingLayer}\";");
+                            }
+                            sb.AppendLine($"{indent}}}");
+                        }
+                        break;
+                    }
+
+                default:
+                    sb.AppendLine($"{indent}// Unknown special component type: {comp.type}");
+                    break;
             }
         }
 

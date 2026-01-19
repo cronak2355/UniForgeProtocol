@@ -138,6 +138,7 @@ namespace Uniforge.FastTrack.Editor
                     case "variable":
                         {
                             string varName = jo["name"]?.ToString() ?? "";
+                            Debug.Log($"[GetOperandCode] Variable reference: name='{varName}', jo={jo.ToString(Newtonsoft.Json.Formatting.None)}");
                             return SanitizeName(varName);
                         }
 
