@@ -119,6 +119,7 @@ namespace Uniforge.FastTrack.Editor
         /// </summary>
         private static async Task ProcessGameData(GameDataJSON data)
         {
+            ImportWarnings.Clear();
             Debug.Log($"<color=cyan>[UniforgeImporter]</color> === Import Started ===");
             Debug.Log($"<color=cyan>[UniforgeImporter]</color> Scenes: {data.scenes?.Count ?? 0}, Assets: {data.assets?.Count ?? 0}");
 
@@ -211,6 +212,7 @@ namespace Uniforge.FastTrack.Editor
             }
 
             Debug.Log("<color=green>[UniforgeImporter]</color> Import complete! Triggering asset refresh...");
+            PrintImportSummary();
             AssetDatabase.Refresh();
         }
 
@@ -430,7 +432,7 @@ namespace Uniforge.FastTrack.Editor
             }
 
             // Destroy scene objects from previous import
-            var oldScenes = GameObject.FindObjectsOfType<Transform>()
+            var oldScenes = GameObject.FindObjectsByType<Transform>(FindObjectsSortMode.None)
                 .Where(t => t.parent == null && t.name.StartsWith("Uniforge_Scene_"))
                 .ToArray();
             foreach (var oldScene in oldScenes)
@@ -457,6 +459,36 @@ namespace Uniforge.FastTrack.Editor
             {
                 CleanGeneratedAssets();
                 Debug.Log("<color=green>[UniforgeImporter]</color> Clean complete!");
+            }
+        }
+
+        #endregion
+
+        #region Import Summary
+
+        public static List<string> ImportWarnings = new List<string>();
+
+        public static void AddWarning(string message)
+        {
+            if (!ImportWarnings.Contains(message))
+            {
+                ImportWarnings.Add(message);
+            }
+        }
+
+        private static void PrintImportSummary()
+        {
+            if (ImportWarnings.Count > 0)
+            {
+                Debug.LogWarning("<color=orange>[UniforgeImporter] Import Warnings:</color>");
+                foreach (var warning in ImportWarnings)
+                {
+                    Debug.LogWarning($"- {warning}");
+                }
+            }
+            else
+            {
+                Debug.Log("<color=green>[UniforgeImporter] No warnings during import.</color>");
             }
         }
 

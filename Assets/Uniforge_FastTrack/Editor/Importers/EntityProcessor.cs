@@ -154,6 +154,7 @@ namespace Uniforge.FastTrack.Editor.Importers
             catch (Exception ex)
             {
                 Debug.LogError($"[EntityProcessor] Failed to process entity {entity.name}: {ex.Message}\n{ex.StackTrace}");
+                Uniforge.FastTrack.Editor.UniforgeImporter.AddWarning($"Entity Failed: {entity.name} (ID: {entity.id}) - {ex.Message}");
             }
 
             return result;

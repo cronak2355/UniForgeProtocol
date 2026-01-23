@@ -34,6 +34,32 @@ namespace Uniforge.FastTrack.Editor
         }
 
         /// <summary>
+        /// Static mapping from variable reference name (as stored in JSON) to actual field name.
+        /// This is set by UniforgeScriptGenerator before generating action code.
+        /// Key: what appears in JSON (e.g. "var_1", "마우스_좌표")
+        /// Value: the actual C# field name (sanitized v.name)
+        /// </summary>
+        public static Dictionary<string, string> VariableNameMapping = new Dictionary<string, string>();
+
+        /// <summary>
+        /// Resolves a variable name from JSON to the actual C# field name.
+        /// Checks the mapping first, falls back to SanitizeName if not found.
+        /// </summary>
+        public static string ResolveVariableName(string jsonName)
+        {
+            if (string.IsNullOrEmpty(jsonName)) return "_unnamed";
+            
+            // Check mapping first
+            if (VariableNameMapping.TryGetValue(jsonName, out string resolved))
+            {
+                return resolved;
+            }
+            
+            // Fallback to sanitized name
+            return SanitizeName(jsonName);
+        }
+
+        /// <summary>
         /// Formats a value for C# code generation.
         /// </summary>
         public static string FormatValue(object value)
@@ -138,8 +164,8 @@ namespace Uniforge.FastTrack.Editor
                     case "variable":
                         {
                             string varName = jo["name"]?.ToString() ?? "";
-                            Debug.Log($"[GetOperandCode] Variable reference: name='{varName}', jo={jo.ToString(Newtonsoft.Json.Formatting.None)}");
-                            return SanitizeName(varName);
+                            // [FIX] Use ResolveVariableName to look up the actual field name from mapping
+                            return ResolveVariableName(varName);
                         }
 
                     case "literal":

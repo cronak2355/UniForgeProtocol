@@ -148,6 +148,7 @@ namespace Uniforge.FastTrack.Editor.Importers
                 else
                 {
                     Debug.LogWarning($"[PrefabProcessor] Failed to save prefab: {prefabPath}");
+                    Uniforge.FastTrack.Editor.UniforgeImporter.AddWarning($"Prefab Save Failed: {asset.name} (ID: {asset.id})");
                 }
 
                 result.Success = true;
@@ -155,6 +156,7 @@ namespace Uniforge.FastTrack.Editor.Importers
             catch (Exception e)
             {
                 Debug.LogWarning($"[PrefabProcessor] Failed to process prefab {asset.id}: {e.Message}");
+                Uniforge.FastTrack.Editor.UniforgeImporter.AddWarning($"Prefab Processing Failed: {asset.name} (ID: {asset.id}) - {e.Message}");
             }
 
             return result;

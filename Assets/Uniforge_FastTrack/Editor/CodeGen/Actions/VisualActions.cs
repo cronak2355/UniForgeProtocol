@@ -64,8 +64,19 @@ namespace Uniforge.FastTrack.Editor.CodeGen.Actions
             }
             else
             {
-                sb.AppendLine($"{indent}if (_animator != null) {{ Debug.Log(\"[Action] PlayAnimation: {animName}\"); _animator.Play(\"{animName}\"); }}");
-                sb.AppendLine($"{indent}else {{ Debug.LogWarning(\"[Action] PlayAnimation Failed: Animator is null for {animName}\"); }}");
+                sb.AppendLine($"{indent}if (_animator != null)");
+                sb.AppendLine($"{indent}{{");
+                sb.AppendLine($"{indent}    if (_animator.runtimeAnimatorController == null)");
+                sb.AppendLine($"{indent}    {{");
+                sb.AppendLine($"{indent}        Debug.LogError($\"[Action] PlayAnimation Failed: No AnimatorController assigned/ found on '{animName}' request.\");");
+                sb.AppendLine($"{indent}    }}");
+                sb.AppendLine($"{indent}    else");
+                sb.AppendLine($"{indent}    {{");
+                sb.AppendLine($"{indent}        Debug.Log($\"[Action] PlayAnimationRequest: '{animName}' on {{_animator.gameObject.name}} (Controller: {{_animator.runtimeAnimatorController.name}})\");");
+                sb.AppendLine($"{indent}        _animator.Play(\"{animName}\");");
+                sb.AppendLine($"{indent}    }}");
+                sb.AppendLine($"{indent}}}");
+                sb.AppendLine($"{indent}else {{ Debug.LogError(\"[Action] PlayAnimation Failed: Animator component is null.\"); }}");
             }
         }
 

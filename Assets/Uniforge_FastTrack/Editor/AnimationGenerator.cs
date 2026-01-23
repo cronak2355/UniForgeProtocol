@@ -172,6 +172,41 @@ namespace Uniforge.FastTrack.Editor
                 }
             }
 
+            // Extract from modules (Visual Scripting nodes)
+            // [FIX] Ensure animations used within modules are also extracted.
+            // If PlayAnimation is called inside a module, we need to add that state to the controller.
+            if (entity.modules != null)
+            {
+                foreach (var module in entity.modules)
+                {
+                    if (module.nodes != null)
+                    {
+                        foreach (var node in module.nodes)
+                        {
+                            if (node.kind == "Action" && node.action == "PlayAnimation" && node.@params != null)
+                            {
+                                var animName = ParameterHelper.GetParamString(node.@params, "animationName");
+                                if (string.IsNullOrEmpty(animName))
+                                    animName = ParameterHelper.GetParamString(node.@params, "animation");
+                                if (string.IsNullOrEmpty(animName))
+                                    animName = ParameterHelper.GetParamString(node.@params, "name");
+                                if (string.IsNullOrEmpty(animName))
+                                    animName = ParameterHelper.GetParamString(node.@params, "anim");
+                                if (string.IsNullOrEmpty(animName))
+                                    animName = ParameterHelper.GetParamString(node.@params, "state");
+
+                                if (!string.IsNullOrEmpty(animName))
+                                {
+                                    result.Add(animName);
+                                    Debug.Log($"[AnimationGenerator] Found module animation: {animName} in module {module.name}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+
             return result;
         }
 
@@ -357,8 +392,63 @@ namespace Uniforge.FastTrack.Editor
                 Debug.Log($"[AnimationGenerator] Regenerating controller for {asset.name}");
             }
 
+            // Verify asset data
+            if (asset != null)
+            {
+                string dump = JsonConvert.SerializeObject(asset); // Requires Newtonsoft.Json
+                Debug.Log($"[AnimationGenerator] Processing Asset: {asset.name} (ID: {asset.id})\nRAW DATA: {dump}");
+            }
+
+            // Try to parse explicit metadata if available
+            if (meta == null && asset.metadata != null)
+            {
+                try
+                {
+                    Debug.Log($"[AnimationGenerator] Found metadata object type: {asset.metadata.GetType().Name}");
+                    
+                    if (asset.metadata is JObject jObj)
+                    {
+                        meta = jObj.ToObject<AssetMetadataJSON>();
+                        Debug.Log($"[AnimationGenerator] Parsed JObject metadata: {JsonConvert.SerializeObject(meta)}");
+                    }
+                    else if (asset.metadata is string jsonStr)
+                    {
+                        meta = JsonConvert.DeserializeObject<AssetMetadataJSON>(jsonStr);
+                        Debug.Log($"[AnimationGenerator] Parsed string metadata: {JsonConvert.SerializeObject(meta)}");
+                    }
+                    else
+                    {
+                         // Try direct cast or serialization fallback
+                         string metaJson = JsonConvert.SerializeObject(asset.metadata);
+                         meta = JsonConvert.DeserializeObject<AssetMetadataJSON>(metaJson);
+                         Debug.Log($"[AnimationGenerator] Parsed object metadata via JSON: {metaJson}");
+                    }
+                    
+                    if (meta != null)
+                    {
+                        Debug.Log($"[AnimationGenerator] FINAL METADATA for {asset.name}: {meta.frameCount} frames, size: {meta.frameWidth}x{meta.frameHeight}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[AnimationGenerator] Failed to parse metadata for {asset.name}: {ex.Message}");
+                }
+            }
+
             // Load sprites - try existing sliced sprites first
             var sprites = LoadSpritesFromAsset(asset);
+
+            // If explicit metadata exists but sprites are not sliced correctly, force slicing using metadata
+            if (meta != null && (sprites == null || sprites.Length != meta.frameCount))
+            {
+                 Debug.Log($"[AnimationGenerator] Metadata exists but sprite count mismatch (Expected: {meta.frameCount}, Found: {sprites?.Length ?? 0}). Forcing slice by metadata.");
+                 sprites = SliceByMetadata(asset, meta);
+
+                 if (sprites == null || sprites.Length != meta.frameCount)
+                 {
+                     UniforgeImporter.AddWarning($"Metadata Slicing Failed: {asset.name} (ID: {asset.id}). Expected {meta.frameCount}, Got {sprites?.Length ?? 0}");
+                 }
+            }
 
             // If no sliced sprites and no metadata, try heuristic slicing
             if ((sprites == null || sprites.Length <= 1) && meta == null)
@@ -369,6 +459,13 @@ namespace Uniforge.FastTrack.Editor
                     sprites = heuristicResult.sprites;
                     meta = heuristicResult.metadata;
                     Debug.Log($"[AnimationGenerator] Heuristic slicing applied: {asset.name} -> {sprites.Length} frames");
+                }
+                else
+                {
+                     // Only warn if we really expected something else, but here we just state it resolved to 1 sprite
+                     // Check if texture dimensions suggest it should have been sliced?
+                     // For now just note it as a potential issue if users expect animation
+                     UniforgeImporter.AddWarning($"Heuristic Slicing: {asset.name} (ID: {asset.id}) resolved to 1 sprite. (No metadata provided)");
                 }
             }
 
@@ -462,6 +559,25 @@ namespace Uniforge.FastTrack.Editor
             }
 
             // Add missing required animations as alias states using default clip
+            // If no sprites found, log warning
+            if (sprites == null || sprites.Length == 0)
+            {
+                Debug.LogWarning($"[AnimationGenerator] No sprites found for {asset.name}!");
+            }
+            else
+            {
+                Debug.Log($"[AnimationGenerator] Loaded {sprites.Length} sprites for {asset.name}.");
+            }
+
+            // Create animations from metadata
+            if (meta.animations != null && meta.animations.Count > 0)
+            {
+                // ... (existing code)
+            }
+            
+            // Log all created states
+            Debug.Log($"[AnimationGenerator] Created states for {asset.name}: {string.Join(", ", createdStates.Keys)}");
+
             // This ensures PlayAnimation("walk") works even if "walk" isn't in metadata
             if (requiredAnimations != null && requiredAnimations.Count > 0 && defaultClip != null)
             {
@@ -473,13 +589,13 @@ namespace Uniforge.FastTrack.Editor
                         var aliasState = rootStateMachine.AddState(animName);
                         aliasState.motion = defaultClip;
                         createdStates[animName] = aliasState;
-                        Debug.Log($"[AnimationGenerator] Created alias state '{animName}' using default animation for {asset.name}");
+                        Debug.LogWarning($"[AnimationGenerator] Missing animation: '{animName}'. Auto-created alias state using default clip ({sprites?.Length ?? 0} frames).");
                     }
                 }
             }
 
             AssetDatabase.SaveAssets();
-            Debug.Log($"[AnimationGenerator] Created controller: {controllerPath}");
+            Debug.Log($"[AnimationGenerator] Created controller: {controllerPath} with {createdStates.Count} states.");
 
             return controller;
         }
@@ -558,19 +674,62 @@ namespace Uniforge.FastTrack.Editor
 
             int width = texture.width;
             int height = texture.height;
+            Debug.Log($"[AnimationGenerator] Inspecting texture for slicing: {asset.name} ({width}x{height})");
 
-            // Heuristic: horizontal strip detection
-            // width > height AND width is divisible by height AND ratio > 1
-            if (width > height && width % height == 0 && width / height > 1)
+            // Heuristic Slicing Logic (Robust)
+            int frameCount = 1;
+            int frameWidth = width;
+            int frameHeight = height;
+
+            if (width > height)
             {
-                int frameCount = width / height;
-                int frameWidth = height; // Square frames
-                int frameHeight = height;
+                // Case 1: Perfect Square Frames (Width is multiple of Height)
+                if (width % height == 0)
+                {
+                    frameCount = width / height;
+                    frameWidth = height;
+                }
+                // Case 2: Standard 4-frame animation (Very common in RPGs, even if not square)
+                else if (width % 4 == 0)
+                {
+                    frameCount = 4;
+                    frameWidth = width / 4;
+                }
+                // Case 3: Standard 3-frame animation
+                else if (width % 3 == 0)
+                {
+                    frameCount = 3;
+                    frameWidth = width / 3;
+                }
+                // Case 4: Standard 6-frame animation
+                else if (width % 6 == 0)
+                {
+                    frameCount = 6;
+                    frameWidth = width / 6;
+                }
+                // Case 5: Standard 8-frame animation
+                else if (width % 8 == 0)
+                {
+                    frameCount = 8;
+                    frameWidth = width / 8;
+                }
+                // Case 6: Fallback for wide textures - assume 4 frames
+                else if (width >= height * 2) 
+                {
+                    frameCount = 4;
+                    frameWidth = width / 4; 
+                    Debug.LogWarning($"[AnimationGenerator] Heuristic fallback: Forcing 4 frames for wide texture {asset.name} ({width}x{height})");
+                }
+            }
 
+            if (frameCount > 1)
+            {
+                Debug.Log($"[AnimationGenerator] Heuristic Slicing: Detected {frameCount} frames ({frameWidth}x{frameHeight}) for {asset.name}");
                 // Modify texture import settings to slice as sprite sheet
                 var importer = AssetImporter.GetAtPath(texturePath) as TextureImporter;
-                if (importer != null && importer.spriteImportMode != SpriteImportMode.Multiple)
+                if (importer != null)
                 {
+                    // Force update settings even if already Multiple, to fix incorrect slicing
                     importer.textureType = TextureImporterType.Sprite;
                     importer.spriteImportMode = SpriteImportMode.Multiple;
                     importer.filterMode = FilterMode.Point;
@@ -618,6 +777,83 @@ namespace Uniforge.FastTrack.Editor
         }
 
         /// <summary>
+        /// Slices texture based on explicit metadata from Frontend.
+        /// </summary>
+        private static Sprite[] SliceByMetadata(AssetDetailJSON asset, AssetMetadataJSON meta)
+        {
+            string texturePath = null;
+            Texture2D texture = null;
+
+            // Texture finding logic (same as Heuristic)
+            string texturesPath = "Assets/Uniforge_FastTrack/Textures";
+            if (Directory.Exists(texturesPath))
+            {
+                var allTextures = AssetDatabase.FindAssets("t:Texture2D", new[] { texturesPath });
+                foreach (var guid in allTextures)
+                {
+                    string path = AssetDatabase.GUIDToAssetPath(guid);
+                    if (!string.IsNullOrEmpty(asset.url))
+                    {
+                        int urlHash = Math.Abs(asset.url.GetHashCode());
+                        if (path.Contains(urlHash.ToString()))
+                        {
+                            texturePath = path;
+                            texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (texture == null)
+            {
+                Debug.LogWarning($"[AnimationGenerator] Could not find texture for metadata slicing: {asset.name}");
+                return null;
+            }
+
+            // Slice using meta info
+            var importer = AssetImporter.GetAtPath(texturePath) as TextureImporter;
+            if (importer != null)
+            {
+                importer.textureType = TextureImporterType.Sprite;
+                importer.spriteImportMode = SpriteImportMode.Multiple;
+                importer.filterMode = FilterMode.Point;
+
+#pragma warning disable CS0618
+                var spritesheet = new List<SpriteMetaData>();
+                for (int i = 0; i < meta.frameCount; i++)
+                {
+                    // Calculate frame position (assuming single row horizontal strip)
+                    // If rows/cols exist, we could use them, but simplified for now
+                    float x = i * meta.frameWidth;
+                    float y = texture.height - meta.frameHeight; // Pivot bottom-left? texture coords start bottom-left
+
+                    // Ensure we don't go out of bounds
+                    if (x + meta.frameWidth > texture.width) break;
+
+                    spritesheet.Add(new SpriteMetaData
+                    {
+                        name = $"{asset.name}_{i}",
+                        rect = new Rect(x, 0, meta.frameWidth, meta.frameHeight), // Assuming single row at bottom 0
+                        pivot = new Vector2(0.5f, 0.5f),
+                        alignment = (int)SpriteAlignment.Center
+                    });
+                }
+                importer.spritesheet = spritesheet.ToArray();
+#pragma warning restore CS0618
+
+                AssetDatabase.ImportAsset(texturePath, ImportAssetOptions.ForceUpdate);
+                AssetDatabase.Refresh();
+                Debug.Log($"[AnimationGenerator] Explicit Slicing applied: {asset.name} -> {meta.frameCount} frames");
+            }
+
+            return AssetDatabase.LoadAllAssetsAtPath(texturePath)
+                .OfType<Sprite>()
+                .OrderBy(s => s.name)
+                .ToArray();
+        }
+
+        /// <summary>
         /// Public method to get sprites for an asset (used by UniforgeImporter to get first frame).
         /// </summary>
         public static Sprite[] GetSpritesForAsset(AssetDetailJSON asset)
@@ -626,12 +862,14 @@ namespace Uniforge.FastTrack.Editor
             
             // First try to load already sliced sprites
             var sprites = LoadSpritesFromAsset(asset);
-            if (sprites != null && sprites.Length > 0)
+            if (sprites != null && sprites.Length > 1)
             {
                 return sprites;
             }
             
-            // If no sliced sprites, try heuristic slicing
+            Debug.Log($"[AnimationGenerator] Existing sprites for {asset.name} count: {sprites?.Length ?? 0}. Trying heuristic slicing...");
+            
+            // If no sliced sprites (or only 1 frame), try heuristic slicing
             var (heuristicSprites, _) = TryHeuristicSlicing(asset);
             return heuristicSprites;
         }

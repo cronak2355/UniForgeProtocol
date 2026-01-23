@@ -159,6 +159,13 @@ namespace Uniforge.FastTrack.Editor.CodeGen.Actions
 
         private void GenerateSpawnEntity(StringBuilder sb, Dictionary<string, object> p, string indent)
         {
+            // [COOLDOWN]
+            float cooldown = ParameterHelper.GetParamFloat(p, "cooldown", 0f);
+            if (cooldown > 0)
+            {
+                sb.AppendLine($"{indent}if (!Uniforge.FastTrack.Runtime.CooldownManager.TryUse(GetInstanceID().ToString() + \"SpawnEntity\", {cooldown}f)) return;");
+            }
+
             string templateId = ParameterHelper.GetParamString(p, "templateId");
             if (string.IsNullOrEmpty(templateId))
                 templateId = ParameterHelper.GetParamString(p, "prefabId");

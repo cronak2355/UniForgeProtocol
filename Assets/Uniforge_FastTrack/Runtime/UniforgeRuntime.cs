@@ -96,4 +96,38 @@ namespace Uniforge.FastTrack.Runtime
             OnDialogueShow?.Invoke(text);
         }
     }
+
+    public static class CooldownManager
+    {
+        private static Dictionary<string, float> _cooldowns = new Dictionary<string, float>();
+
+        /// <summary>
+        /// Checks if an action is ready to use based on cooldown.
+        /// Returns true if ready (and resets timer), false if cooling down.
+        /// </summary>
+        public static bool TryUse(string key, float duration)
+        {
+            if (duration <= 0) return true; // No cooldown
+
+            if (!_cooldowns.TryGetValue(key, out float lastTime))
+            {
+                // First use: Always allow
+                _cooldowns[key] = Time.time;
+                return true;
+            }
+
+            if (Time.time - lastTime < duration)
+            {
+                return false; // Cooldown active
+            }
+
+            _cooldowns[key] = Time.time;
+            return true;
+        }
+
+        public static void ClearAll()
+        {
+            _cooldowns.Clear();
+        }
+    }
 }

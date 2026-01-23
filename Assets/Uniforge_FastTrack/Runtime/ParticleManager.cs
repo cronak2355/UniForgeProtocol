@@ -23,7 +23,7 @@ namespace Uniforge.FastTrack.Runtime
 
         public void Play(string preset, Vector3 position, float scale = 1f)
         {
-            Debug.Log($"[ParticleManager] Playing particle '{preset}' at {position}");
+            // Debug.Log($"[ParticleManager] Playing particle '{preset}' at {position}");
             var ps = GetParticle();
             ps.transform.position = position;
             ps.transform.localScale = Vector3.one * scale;
@@ -43,7 +43,7 @@ namespace Uniforge.FastTrack.Runtime
             
             if (UniforgeRuntime.Instance?.Particles != null)
             {
-                Debug.Log($"[ParticleManager] PlayStatic: {preset} at {position}");
+                // Debug.Log($"[ParticleManager] PlayStatic: {preset} at {position}");
                 UniforgeRuntime.Instance.Particles.Play(preset, position, scale);
             }
             else

@@ -22,6 +22,40 @@ namespace Uniforge.FastTrack.Editor
             // v3: Use components directly, no conversion needed
             var logicComponents = GetLogicComponents(entity);
 
+            // [FIX] Setup variable name mapping so GetOperandCode can resolve variable references
+            // This maps: var_1, id, name → sanitized original name (the primary field)
+            ParameterHelper.VariableNameMapping.Clear();
+            if (entity.variables != null)
+            {
+                for (int i = 0; i < entity.variables.Count; i++)
+                {
+                    var v = entity.variables[i];
+                    string primaryFieldName = ParameterHelper.SanitizeName(v.name);
+                    
+                    // Map various possible references to the primary field name:
+                    
+                    // 1. Original name (마우스_좌표) → sanitized name
+                    if (!string.IsNullOrEmpty(v.name) && !ParameterHelper.VariableNameMapping.ContainsKey(v.name))
+                    {
+                        ParameterHelper.VariableNameMapping[v.name] = primaryFieldName;
+                    }
+                    
+                    // 2. Variable ID (UUID) → sanitized name
+                    if (!string.IsNullOrEmpty(v.id) && !ParameterHelper.VariableNameMapping.ContainsKey(v.id))
+                    {
+                        ParameterHelper.VariableNameMapping[v.id] = primaryFieldName;
+                    }
+                    
+                    // 3. Index-based fallback (var_1, var_2...) → sanitized name
+                    // This handles cases where frontend might use "var_1" as fallback identifier
+                    string indexKey = $"var_{i + 1}";
+                    if (!ParameterHelper.VariableNameMapping.ContainsKey(indexKey))
+                    {
+                        ParameterHelper.VariableNameMapping[indexKey] = primaryFieldName;
+                    }
+                }
+            }
+
             // Get special component types (playanimation, particle, etc.)
             var specialComponents = GetSpecialComponents(entity);
 
@@ -77,9 +111,7 @@ namespace Uniforge.FastTrack.Editor
             Debug.Log($"<color=green>[ScriptGen]</color> Generated: {className} ({logicComponents.Count} logic blocks)");
         }
 
-        /// <summary>
-        /// Get logic components from entity (supports both v3 and legacy formats)
-        /// </summary>
+
         private static List<ComponentJSON> GetLogicComponents(EntityJSON entity)
         {
             // v3: Primary source is components array
@@ -222,8 +254,9 @@ namespace Uniforge.FastTrack.Editor
             sb.AppendLine("    // === User Variables ===");
             if (variables != null)
             {
-                foreach (var v in variables)
+                for (int i = 0; i < variables.Count; i++)
                 {
+                    var v = variables[i];
                     string type = GetCSharpType(v.type);
                     string defaultValue = GetDefaultValue(v.type, v.value);
                     
@@ -232,16 +265,23 @@ namespace Uniforge.FastTrack.Editor
                     sb.AppendLine($"    public {type} {primaryFieldName} = {defaultValue};");
                     
                     // [FIX] Also generate ID-based alias if v.id exists and differs from name
-                    // This supports legacy data where actions reference variables by ID (var_1)
+                    // This supports legacy data where actions reference variables by ID
                     if (!string.IsNullOrEmpty(v.id))
                     {
                         string idFieldName = ParameterHelper.SanitizeName(v.id);
-                        // Only add alias if it's different from primary field name
                         if (idFieldName != primaryFieldName)
                         {
-                            // Generate a property that references the main field
                             sb.AppendLine($"    private {type} {idFieldName} {{ get => {primaryFieldName}; set => {primaryFieldName} = value; }}");
                         }
+                    }
+
+                    // [FIX] Force generate index-based alias (var_1, var_2...) for robust fallback
+                    // This ensures that even if mapping fails or GetOperandCode returns 'var_1', the code still compiles.
+                    string indexFieldName = $"var_{i + 1}";
+                    // Prevent duplicate if index field name conflicts with primary name or ID
+                    if (indexFieldName != primaryFieldName && (string.IsNullOrEmpty(v.id) || indexFieldName != ParameterHelper.SanitizeName(v.id)))
+                    {
+                        sb.AppendLine($"    private {type} {indexFieldName} {{ get => {primaryFieldName}; set => {primaryFieldName} = value; }}");
                     }
                 }
             }
@@ -312,6 +352,7 @@ namespace Uniforge.FastTrack.Editor
             sb.AppendLine("        if (_animator == null) _animator = gameObject.AddComponent<Animator>();");
             sb.AppendLine("        _rigidbody = GetComponent<Rigidbody2D>();");
             sb.AppendLine("        _mainCamera = Camera.main;");
+            sb.AppendLine($"        Debug.Log($\"[GenScript] {{gameObject.name}} initialized.\");");
             sb.AppendLine("    }");
             sb.AppendLine();
         }
@@ -608,6 +649,7 @@ namespace Uniforge.FastTrack.Editor
 
                     sb.AppendLine($"        if (Input.{inputMethod}(KeyCode.{unityKey}))");
                     sb.AppendLine($"        {{");
+                    sb.AppendLine($"            Debug.Log($\"[GenScript] Key '{unityKey}' pressed\");");
                     GenerateComponentCode(sb, comp, "            ", entity);
                     sb.AppendLine($"        }}");
                 }
@@ -739,7 +781,7 @@ namespace Uniforge.FastTrack.Editor
             {
                 foreach (var action in comp.actions)
                 {
-                    ActionCodeGenerator.GenerateActionCode(sb, action.type, action.GetAllParams(), innerIndent, entity, null);
+                    ActionCodeGenerator.GenerateActionCode(sb, action.type, action.GetAllParams(), innerIndent, entity, TraverseGraph);
                 }
             }
 
@@ -751,13 +793,45 @@ namespace Uniforge.FastTrack.Editor
                 sb.AppendLine($"{indent}{{");
                 foreach (var action in comp.elseActions)
                 {
-                    ActionCodeGenerator.GenerateActionCode(sb, action.type, action.GetAllParams(), innerIndent, entity, null);
+                    ActionCodeGenerator.GenerateActionCode(sb, action.type, action.GetAllParams(), innerIndent, entity, TraverseGraph);
                 }
             }
 
             if (hasConditions)
             {
                 sb.AppendLine($"{indent}}}");
+            }
+        }
+
+        /// <summary>
+        /// Traverses a Visual Scripting graph node and generates code for its actions.
+        /// Callback used by FlowActions.GenerateRunModule.
+        /// </summary>
+        private static void TraverseGraph(StringBuilder sb, NodeJSON node, ModuleJSON module, string indent, EntityJSON entity)
+        {
+            if (node == null || module == null) return;
+            
+            // Limit recursion depth to prevent infinite loops (simple safeguard)
+            // In a real implementation, we might track visited nodes.
+            
+            // Process the current node based on its kind
+            if (node.kind == "Action")
+            {
+                ActionCodeGenerator.GenerateActionCode(sb, node.action, node.@params, indent, entity, TraverseGraph);
+            }
+            
+            // Follow edges to next nodes
+            var edges = module.edges?.Where(e => e.fromNodeId == node.id).ToList();
+            if (edges != null)
+            {
+                foreach (var edge in edges)
+                {
+                    var nextNode = module.nodes?.FirstOrDefault(n => n.id == edge.toNodeId);
+                    if (nextNode != null)
+                    {
+                        TraverseGraph(sb, nextNode, module, indent, entity);
+                    }
+                }
             }
         }
 
